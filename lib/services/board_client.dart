@@ -26,9 +26,9 @@ const String kSettingBoardUrl = 'board_url'; // 留空 = 用内置默认地址
 const String kSettingBoardKey = 'board_key'; // 可选共享口令
 const String kSettingBoardEnabled = 'board_enabled'; // '1' / '0'，默认开
 
-/// **内置的默认服务器地址**：装完 App 打开就能看，不需要任何人手动配置。
-/// 换服务器时改这一行重新出包即可；用户也可以在设置里覆盖（覆盖值优先）。
-const String kDefaultBoardUrl = 'http://glk0108.site:8787';
+/// 默认服务器地址：**留空**——公开仓库不内置任何私有地址，避免陌生人安装后
+/// 数据被自动传向固定服务器。自用出包时在这一行填自己的服务器地址即可。
+const String kDefaultBoardUrl = '';
 
 class BoardConfig {
   final String url;
