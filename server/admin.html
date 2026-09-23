@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日打卡 · 管理后台</title>
+<style>
+  :root{
+    --paper:#FBF8F3; --ink:#26221E; --muted:#8A837A; --red:#C62828;
+    --line:#EDE6DC; --rest:#4A6FA5; --ok:#6E8B5A; --gold:#C9A227;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:20px 16px 60px; background:var(--paper); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  h1{font-size:20px; margin:0 0 4px; letter-spacing:.5px}
+  h2{font-size:15px; margin:26px 0 10px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:16px}
+  input,button,select{
+    font-size:14px; border:1px solid var(--line); border-radius:10px;
+    padding:7px 10px; background:#fff; color:var(--ink);
+  }
+  input[type=password],input[type=text],input[type=number],input[type=date]{min-width:150px}
+  button{cursor:pointer}
+  button:hover{border-color:#D9CFC0}
+  button.primary{background:var(--red); color:#fff; border-color:var(--red)}
+  button.danger{background:#fff; color:var(--red); border-color:#E7C9C9}
+  .bar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:10px 0}
+  .card{background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px}
+  table{border-collapse:collapse; width:100%; font-size:13.5px}
+  th,td{padding:7px 8px; text-align:left; border-bottom:1px solid var(--line); vertical-align:middle}
+  th{color:var(--muted); font-weight:600}
+  .tag{font-size:12px; color:var(--muted)}
+  .taskrow{display:flex; gap:8px; padding:3px 0; font-size:13.5px}
+  .ok{color:var(--ok)} .todo{color:#C9BFB2}
+  .err{color:var(--red); font-size:13px; margin:8px 0}
+  .muted{color:var(--muted); font-size:13px}
+  .hidden{display:none}
+  .note-line{font-size:13px; color:#4B443C; margin:2px 0}
+  .foot{margin-top:26px; color:#B3A99C; font-size:12px}
+</style>
+</head>
+<body>
+  <h1>每日打卡 · 管理后台</h1>
+  <div class="sub">只有知道管理口令的人能进来（<code>/admin</code>，服务端不配置口令时本页不存在）。</div>
+
+  <div class="bar">
+    <input type="password" id="token" placeholder="管理口令" autocomplete="off">
+    <button class="primary" id="connect">保存并连接</button>
+    <span id="connState" class="muted"></span>
+  </div>
+  <div id="err" class="err" hidden></div>
+
+  <div id="panel" class="hidden">
+    <h2>昵称管理</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>昵称</th><th>数据天数</th><th>首个 / 最近日期</th><th>最后上传</th><th style="width:200px">操作</th></tr></thead>
+        <tbody id="users"></tbody>
+      </table>
+      <div class="muted" style="margin-top:8px">「重命名 / 合并」= 把该昵称的全部数据迁到另一个名字名下（同一天取最新上传的一份）；迁完旧名字彻底消失。</div>
+    </div>
+
+    <h2>单日数据（纠错）</h2>
+    <div class="card">
+      <div class="bar">
+        <input type="text" id="dayName" list="nameList" placeholder="昵称">
+        <datalist id="nameList"></datalist>
+        <input type="date" id="dayDate">
+        <button class="primary" id="loadDay">查询</button>
+      </div>
+      <div id="dayBox"></div>
+    </div>
+  </div>
+
+  <div class="foot">手机上传的数据以最新一次为准；这里只做救急纠错，不做日常编辑。</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cnDate = (d) => { const p = (d||'').split('-'); return p.length===3 ? `${+p[1]}月${+p[2]}日` : (d||''); };
+const cnTime = (sec) => {
+  if (!sec) return '—';
+  const t = new Date(sec * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+};
+const token = () => localStorage.getItem('checkin_admin') || '';
+
+function fail(msg){ const e = $('err'); e.hidden = false; e.textContent = msg; }
+function okMsg(msg){ const e = $('err'); e.hidden = false; e.textContent = msg; e.style.color = 'var(--ok)'; setTimeout(()=>{e.hidden=true;e.style.color='';}, 2500); }
+
+async function api(path, opts = {}){
+  const r = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'X-Checkin-Admin': token(), ...(opts.headers||{}) },
+  });
+  if (r.status === 401) throw new Error('管理口令不对（重新输入后点「保存并连接」）');
+  if (r.status === 404) throw new Error('接口不存在（服务端没配管理口令？）');
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+  return body;
+}
+
+let users = [];
+
+async function loadUsers(){
+  const data = await api('/api/admin/users');
+  users = data.users || [];
+  $('users').innerHTML = users.map(u => `
+    <tr>
+      <td><b>${esc(u.name)}</b></td>
+      <td>${u.days}</td>
+      <td>${cnDate(u.first_date)} ~ ${cnDate(u.last_date)}</td>
+      <td class="tag">${cnTime(u.last_upload)}</td>
+      <td>
+        <button data-act="rename" data-name="${esc(u.name)}">重命名 / 合并</button>
+        <button class="danger" data-act="del" data-name="${esc(u.name)}">删除全部</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">还没有任何数据</td></tr>';
+  $('nameList').innerHTML = users.map(u => `<option value="${esc(u.name)}">`).join('');
+  $('connState').textContent = `已连接 · ${users.length} 个昵称`;
+}
+
+$('users').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button');
+  if (!btn) return;
+  const name = btn.dataset.name;
+  try {
+    if (btn.dataset.act === 'rename'){
+      const to = prompt(`把「${name}」的全部数据迁到哪个名字下？（输入新昵称；如果目标名字已有数据，同一天会保留较新的那份）`, '');
+      if (!to || to.trim() === '' || to.trim() === name) return;
+      if (!confirm(`确认把「${name}」的数据全部并入「${to.trim()}」？`)) return;
+      const r = await api('/api/admin/rename', {method:'POST', body: JSON.stringify({from: name, to: to.trim()})});
+      okMsg(`已迁移 ${r.moved} 天数据：${name} → ${to.trim()}`);
+      await loadUsers();
+    }
+    if (btn.dataset.act === 'del'){
+      if (!confirm(`删除「${name}」的全部数据？此操作不可恢复！`)) return;
+      if (!confirm(`再确认一次：真的要删掉「${name}」的所有看板数据吗？`)) return;
+      const r = await api('/api/admin/delete_user', {method:'POST', body: JSON.stringify({name})});
+      okMsg(`已删除「${name}」（${r.deleted} 天数据）`);
+      await loadUsers();
+      $('dayBox').innerHTML = '';
+    }
+  } catch (e) { fail(e.message); }
+});
+
+$('loadDay').addEventListener('click', async () => {
+  const name = $('dayName').value.trim();
+  const date = $('dayDate').value;
+  $('dayBox').innerHTML = '';
+  if (!name || !date) { fail('先填昵称和日期'); return; }
+  try {
+    const d = await api(`/api/admin/day?name=${encodeURIComponent(name)}&date=${encodeURIComponent(date)}`);
+    renderDay(d.snapshot);
+  } catch (e) { fail(`${name} 在 ${date}：${e.message}`); }
+});
+
+function renderDay(s){
+  const tasks = (s.tasks || []).map(t => `
+    <div class="taskrow">
+      <span class="${t.done ? 'ok' : 'todo'}">${t.done ? '✓' : '○'}</span>
+      <span>${esc(t.name)}</span>
+      <span class="tag">${({single:'临时',repeating:'重复',periodic:'周期'})[t.kind] || esc(t.kind||'')}
+        ${t.schedule ? '· ' + esc(t.schedule) : ''}</span>
+    </div>`).join('') || '<div class="muted">这天没有任务明细</div>';
+  const n = s.note || {};
+  const noteLines = [
+    n.gain ? ['收获', n.gain] : null, n.blocker ? ['卡点', n.blocker] : null,
+    n.tomorrow ? ['明天', n.tomorrow] : null, n.extra ? ['其他', n.extra] : null,
+  ].filter(Boolean).map(([k, v]) => `<div class="note-line"><b class="tag">${k}</b> ${esc(v)}</div>`).join('');
+
+  $('dayBox').innerHTML = `
+    <div class="bar">
+      <label class="tag">完成 <input type="number" id="e_done" value="${s.done}" min="0" max="200" style="width:80px"></label>
+      <label class="tag">应完成 <input type="number" id="e_total" value="${s.total}" min="0" max="200" style="width:80px"></label>
+      <label class="tag"><input type="checkbox" id="e_rest" ${s.is_rest ? 'checked' : ''}> 休息日</label>
+      <span class="tag">（最后上传 ${cnTime(s.uploaded_at)} · v${esc(s.app_version || '?')}）</span>
+    </div>
+    <div>${tasks}</div>
+    ${noteLines ? `<div style="margin-top:10px"><div class="tag">睡前总结</div>${noteLines}</div>` : ''}
+    <div class="bar" style="margin-top:12px">
+      <button class="primary" id="saveDay">保存修改</button>
+      <button class="danger" id="delDay">删除这天</button>
+    </div>`;
+
+  $('saveDay').addEventListener('click', async () => {
+    try {
+      await api('/api/admin/save_day', {method:'POST', body: JSON.stringify({
+        name: s.name, date: s.date,
+        total: Number($('e_total').value || 0),
+        done: Number($('e_done').value || 0),
+        is_rest: $('e_rest').checked,
+      })});
+      okMsg('已保存（下次手机上传会覆盖这里的修改）');
+    } catch (e) { fail(e.message); }
+  });
+  $('delDay').addEventListener('click', async () => {
+    if (!confirm(`删除 ${s.name} 的 ${s.date} 这天数据？`)) return;
+    if (!confirm('再确认一次：删除后该天在看板上变成「没上传」。')) return;
+    try {
+      await api('/api/admin/delete_day', {method:'POST', body: JSON.stringify({name: s.name, date: s.date})});
+      okMsg('已删除');
+      $('dayBox').innerHTML = '';
+      await loadUsers();
+    } catch (e) { fail(e.message); }
+  });
+}
+
+$('connect').addEventListener('click', async () => {
+  const t = $('token').value.trim();
+  if (!t) { fail('先输入管理口令'); return; }
+  localStorage.setItem('checkin_admin', t);
+  $('err').hidden = true;
+  try {
+    await loadUsers();
+    $('panel').classList.remove('hidden');
+    $('token').value = '';
+    if (!$('dayDate').value) $('dayDate').value = new Date().toISOString().slice(0, 10);
+  } catch (e) { fail(e.message); }
+});
+
+// 打开页面时如果本地已存口令，自动尝试连接
+if (token()) {
+  loadUsers().then(() => {
+    $('panel').classList.remove('hidden');
+    if (!$('dayDate').value) $('dayDate').value = new Date().toISOString().slice(0, 10);
+  }).catch((e) => fail(e.message));
+}
+</script>
+</body>
+</html>

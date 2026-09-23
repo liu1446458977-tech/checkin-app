@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 31+ 的备份/迁移规则：一律排除。
+  原因是 API Key 的密文存在 SharedPreferences 里，虽然密钥在系统密钥库里、
+  换机后本来也解不开，但密文没必要跟着云备份跑；数据备份请用应用内的「导出」功能。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" />
+        <exclude domain="database" />
+        <exclude domain="file" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" />
+        <exclude domain="database" />
+        <exclude domain="file" />
+    </device-transfer>
+</data-extraction-rules>

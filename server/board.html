@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日打卡 · 看板</title>
+<style>
+  :root{
+    --paper:#FBF8F3; --ink:#26221E; --muted:#8A837A; --red:#C62828;
+    --line:#EDE6DC; --rest:#4A6FA5; --ok:#6E8B5A; --gold:#C9A227;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:20px 16px 60px; background:var(--paper); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  h1{font-size:20px; margin:0 0 4px; letter-spacing:.5px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:16px}
+  .bar{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:18px}
+  button{
+    border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:10px;
+    padding:7px 12px; font-size:14px; cursor:pointer;
+  }
+  button:hover{border-color:#D9CFC0}
+  button.primary{background:var(--red); color:#fff; border-color:var(--red)}
+  .date{font-weight:600; font-variant-numeric:tabular-nums}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px}
+  .card{background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px}
+  .card.carried{border-style:dashed; background:#FFFDF8}
+  .who{display:flex; align-items:baseline; gap:10px; margin-bottom:2px}
+  .who .name{font-size:17px; font-weight:700}
+  .who .tag{font-size:12px; color:var(--muted)}
+  .meters{display:flex; align-items:center; gap:10px; margin:10px 0 6px}
+  .num{font-size:26px; font-weight:700; color:var(--red); font-variant-numeric:tabular-nums}
+  .num small{font-size:13px; color:var(--muted); font-weight:400}
+  .track{flex:1; height:8px; background:var(--line); border-radius:6px; overflow:hidden}
+  .fill{height:100%; background:var(--red); border-radius:6px}
+  .fill.rest{background:var(--rest)}
+  ul{list-style:none; margin:10px 0 0; padding:0}
+  li{display:flex; gap:8px; align-items:flex-start; padding:5px 0; border-top:1px dashed var(--line)}
+  li:first-child{border-top:0}
+  .mk{flex:0 0 18px; text-align:center; font-weight:700}
+  .mk.done{color:var(--ok)}
+  .mk.todo{color:#C9BFB2}
+  .nm{flex:1}
+  .nm.done{color:var(--muted); text-decoration:line-through}
+  .kind{font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:20px; padding:1px 7px; white-space:nowrap}
+  .sch{font-size:11.5px; color:var(--muted)}
+  .note{margin-top:12px; padding-top:10px; border-top:1px solid var(--line); font-size:13.5px; color:#4B443C}
+  .note b{color:var(--muted); font-weight:600}
+  .empty{color:var(--muted); font-size:14px; padding:10px 0}
+  .week{margin-top:26px}
+  .week h2{font-size:15px; margin:0 0 10px}
+  table{border-collapse:collapse; width:100%; font-size:13px}
+  th,td{padding:6px 8px; text-align:center; border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left; color:var(--muted)}
+  .cell{display:inline-block; width:26px; height:22px; line-height:22px; border-radius:6px; background:#F2EDE5; color:#B3A99C; font-variant-numeric:tabular-nums}
+  .cell.s1{background:#F6D9C7; color:#8A4B2A}
+  .cell.s2{background:#EFC09B; color:#6E3A1B}
+  .cell.s3{background:#D98C5F; color:#fff}
+  .cell.s4{background:var(--red); color:#fff}
+  .cell.rest{background:#DCE6F3; color:var(--rest)}
+  .cell.none{background:#F7F4EF; color:#DDD5C9}
+  .err{color:var(--red); font-size:13px; margin:10px 0}
+  .foot{margin-top:26px; color:#B3A99C; font-size:12px}
+</style>
+</head>
+<body>
+  <h1>每日打卡 · 看板</h1>
+  <div class="sub">手机是唯一数据源，这里只做展示（单向上传，不做双向同步）</div>
+
+  <div class="bar">
+    <button id="prev" title="前一天">←</button>
+    <span class="date" id="dateLabel">—</span>
+    <button id="next" title="后一天">→</button>
+    <button class="primary" id="today">今天</button>
+    <button id="refresh">刷新</button>
+  </div>
+
+  <div class="err" id="err" hidden></div>
+  <div class="grid" id="cards"></div>
+
+  <div class="week">
+    <h2>近 7 天</h2>
+    <div id="weekBox"></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let date = new Date();
+const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const shift = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const esc = (s) => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function key(){ return localStorage.getItem('checkin_key') || ''; }
+function headers(){ const h = {}; const k = key(); if (k) h['X-Checkin-Key'] = k; return h; }
+
+async function api(url){
+  let r = await fetch(url, {headers: headers()});
+  if (r.status === 401){
+    const k = prompt('这台服务器要求口令（X-Checkin-Key）：');
+    if (k){ localStorage.setItem('checkin_key', k); r = await fetch(url, {headers: headers()}); }
+  }
+  if (!r.ok) throw new Error('HTTP ' + r.status + (r.status===401 ? '（口令不对）' : ''));
+  return r.json();
+}
+
+function ratio(s){ if (!s.total) return s.done ? 1 : 0; return Math.min(1, s.done / s.total); }
+function pct(s){ return Math.round(ratio(s)*100); }
+const cnDate = (d) => { const p = (d||'').split('-'); return p.length===3 ? `${+p[1]}月${+p[2]}日` : d; };
+
+function cardOf(s){
+  // 延续卡：人今天没打开 App，服务器用最近一次上传里的「还在周期内的周期任务」占位，
+  // 保证长期目标一直看得见；不显示完成率（那是当天真实数据才有的东西）。
+  if (s.carried){
+    const ctasks = (s.tasks||[]).map(t => `
+    <li>
+      <span class="mk ${t.done?'done':'todo'}">${t.done?'✓':'○'}</span>
+      <span class="nm ${t.done?'done':''}">${esc(t.name)}
+        ${t.schedule ? `<div class="sch">${esc(t.schedule)}</div>` : ''}
+      </span>
+      <span class="kind">周期</span>
+    </li>`).join('');
+    return `
+    <div class="card carried">
+      <div class="who">
+        <span class="name">${esc(s.name)}</span>
+        <span class="tag" style="color:var(--gold)">未同步</span>
+        <span class="tag">最近同步 ${cnDate(s.last_sync)}</span>
+      </div>
+      <div class="empty" style="padding:6px 0 2px">今天还没打开 App，以下是进行中的周期任务：</div>
+      ${ctasks ? `<ul>${ctasks}</ul>` : ''}
+    </div>`;
+  }
+  const doneCls = s.is_rest ? 'fill rest' : 'fill';
+  const tasks = (s.tasks||[]).map(t => `
+    <li>
+      <span class="mk ${t.done?'done':'todo'}">${t.done?'✓':'○'}</span>
+      <span class="nm ${t.done?'done':''}">${esc(t.name)}
+        ${t.schedule ? `<div class="sch">${esc(t.schedule)}</div>` : ''}
+      </span>
+      <span class="kind">${({single:'临时',repeating:'重复',periodic:'周期'})[t.kind] || esc(t.kind||'')}</span>
+    </li>`).join('');
+  const n = s.note;
+  const note = (n && (n.gain||n.blocker||n.tomorrow||n.extra)) ? `
+    <div class="note">
+      ${n.gain?`<div><b>收获</b> ${esc(n.gain)}</div>`:''}
+      ${n.blocker?`<div><b>卡点</b> ${esc(n.blocker)}</div>`:''}
+      ${n.tomorrow?`<div><b>明天</b> ${esc(n.tomorrow)}</div>`:''}
+      ${n.extra?`<div><b>其他</b> ${esc(n.extra)}</div>`:''}
+    </div>` : '';
+  return `
+    <div class="card">
+      <div class="who">
+        <span class="name">${esc(s.name)}</span>
+        ${s.is_rest?'<span class="tag" style="color:var(--rest)">休息日</span>':''}
+        ${s.streak?`<span class="tag">连续 ${s.streak} 天</span>`:''}
+      </div>
+      <div class="meters">
+        <span class="num">${s.total? s.done : (s.is_rest? '休息':'—')}<small>${s.total? ' / '+s.total : ''}</small></span>
+        <span class="track"><span class="${doneCls}" style="width:${s.total? pct(s):(s.is_rest?100:0)}%"></span></span>
+        <span class="tag">${s.total? pct(s)+'%' : ''}</span>
+      </div>
+      ${tasks? `<ul>${tasks}</ul>` : '<div class="empty">这天还没上传任务</div>'}
+      ${note}
+    </div>`;
+}
+
+async function load(){
+  $('err').hidden = true;
+  const d = fmt(date);
+  $('dateLabel').textContent = `${d} · 星期${'日一二三四五六'[new Date(d+'T00:00:00').getDay()]}`;
+  try{
+    const data = await api(`/api/board?date=${d}&days=7`);
+    const today = data.today || [];
+    const mine = {};
+    today.forEach(s => mine[s.name] = s);
+    const users = (data.users && data.users.length) ? data.users : today.map(s=>s.name);
+    // 没上传的人也要占一张卡片，否则"谁没交"看不出来
+    const all = users.length ? users.map(n => mine[n] || {name:n, total:0, done:0, tasks:[]}) : today;
+    $('cards').innerHTML = all.length ? all.map(cardOf).join('') : '<div class="empty">还没有人上传过</div>';
+
+    // 近 7 天格子
+    const days = data.days || [];
+    const range = data.range || {};
+    let rows = '';
+    users.forEach(u => {
+      let cells = '';
+      days.forEach(day => {
+        const s = (range[day]||[]).find(x => x.name === u);
+        if (!s){ cells += '<td><span class="cell none">·</span></td>'; return; }
+        if (s.is_rest){ cells += '<td><span class="cell rest">休</span></td>'; return; }
+        const r = ratio(s);
+        const lv = r>=1?4 : r>=0.66?3 : r>=0.33?2 : s.done>0?1 : 0;
+        cells += `<td><span class="cell s${lv}" title="${day} ${s.done}/${s.total}">${s.total? Math.round(r*100):'0'}</span></td>`;
+      });
+      rows += `<tr><td>${esc(u)}</td>${cells}</tr>`;
+    });
+    const head = days.map(d => `<th>${d.slice(5)}</th>`).join('');
+    $('weekBox').innerHTML = days.length ? `<table><tr><th></th>${head}</tr>${rows}</table>` : '';
+    $('foot').textContent = '数据来自各人手机上传；同一天重复上传按覆盖处理。';
+  }catch(e){
+    $('err').hidden = false;
+    $('err').textContent = '加载失败：' + e.message;
+  }
+}
+
+$('prev').onclick = () => { date = shift(date,-1); load(); };
+$('next').onclick = () => { date = shift(date, 1); load(); };
+$('today').onclick = () => { date = new Date(); load(); };
+$('refresh').onclick = load;
+load();
+</script>
+</body>
+</html>

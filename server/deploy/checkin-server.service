@@ -1,0 +1,34 @@
+[Unit]
+Description=checkin-server 三人打卡看板后端
+Documentation=https://github.com/yourname/checkin_app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=checkin
+Group=checkin
+WorkingDirectory=/opt/checkin
+
+# 监听地址与数据库；要开共享口令就把 CHECKIN_KEY 解开并改成你的口令
+Environment=CHECKIN_ADDR=127.0.0.1:8787
+Environment=CHECKIN_DB=/opt/checkin/checkin.db
+# Environment=CHECKIN_KEY=换成你的口令
+
+ExecStart=/opt/checkin/checkin-server -addr=${CHECKIN_ADDR} -db=${CHECKIN_DB}
+
+# 挂了自动重启；日志进 journal（journalctl -u checkin-server -f）
+Restart=always
+RestartSec=3
+
+# 基本加固：这个服务只需要写自己的工作目录和网络
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/checkin
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

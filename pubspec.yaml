@@ -1,0 +1,26 @@
+name: checkin_app
+description: "每日打卡 · 给上进的人"
+publish_to: 'none'
+version: 1.2.8+12
+
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  sqflite: ^2.4.0
+  path: ^1.9.0
+  shared_preferences: ^2.5.0
+  # 提醒已改为原生 AlarmManager + 原生通知（见 android/.../Reminders.kt），
+  # 所以不再需要 workmanager / flutter_local_notifications：
+  # 少两个插件 → 少两套 Kotlin/KGP 构建坑，App 也不用后台常驻。
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
