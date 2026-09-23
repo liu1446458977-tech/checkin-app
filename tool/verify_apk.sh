@@ -7,6 +7,23 @@ BT="/c/Users/torch/AppData/Local/Android/Sdk/build-tools/36.0.0"
 
 if [ ! -f "$APK" ]; then echo "❌ 找不到 APK: $APK"; exit 1; fi
 
+echo "==================== 0) 出包检查：默认服务器地址 ===================="
+SRC="$(dirname "$0")/../lib/services/board_client.dart"
+if [ -f "$SRC" ]; then
+  if grep -q "kDefaultBoardUrl = ''" "$SRC"; then
+    echo "⚠️⚠️⚠️ 默认服务器地址为空！这版包发给老用户会让他们整体掉线"
+    echo "    （老用户手机里没存过地址、靠内置默认值，设置页也没有地址入口）"
+    echo "    发版前：把 lib/services/board_client.dart 里 kDefaultBoardUrl 填回服务器地址"
+    echo "    （若确认就是要发空白版：删掉本条检查再跑）"
+    exit 1
+  fi
+  grep -n "kDefaultBoardUrl =" "$SRC" | head -2
+  echo "✓ 默认服务器地址已填（核对上面一行）"
+else
+  echo "（未找到 $SRC，跳过此检查）"
+fi
+echo ""
+
 echo "==================== 1) 文件 ===================="
 ls -lh "$APK" | awk '{print "路径: '"$APK"'\n体积: "$5}'
 
